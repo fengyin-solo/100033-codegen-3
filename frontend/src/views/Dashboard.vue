@@ -3,15 +3,21 @@
     <header class="page-head">
       <div>
         <h2>运营概览</h2>
-        <p class="page-desc">汇总各业务模块的关键指标，先看总量再看异常。</p>
+        <p class="page-desc">汇总各业务模块的关键指标；许可与告警按当前角色授权区域统计，越界告警单独成卡。</p>
+      </div>
+      <div class="page-actions">
+        <RouterLink class="btn primary" to="/safety">进入安全区域管控</RouterLink>
       </div>
     </header>
     <div class="stat-row">
       <article v-for="card in cards" :key="card.label" class="stat-card">
         <span class="stat-label">{{ card.label }}</span>
-        <strong class="stat-value">{{ card.value }}</strong>
+        <strong class="stat-value" :class="{ 'error-text': card.label === '待提醒越界告警' && card.value > 0 }">
+          {{ card.value }}
+        </strong>
       </article>
     </div>
+    <p v-if="scope" class="page-desc">当前角色：{{ scope.角色 }} · {{ scope.授权范围 }}</p>
     <table class="data-table">
       <thead>
         <tr><th>业务模块</th><th>今日新增</th><th>待处理</th><th>异常量</th></tr>
@@ -36,19 +42,29 @@ import { fetchJson } from '@/api/client'
 type Overview = {
   cards: { label: string; value: number }[]
   modules: { name: string; created: number; pending: number; abnormal: number }[]
+  scope?: { 角色: string; 授权范围: string }
+  boundary_pending?: number
 }
 
 const cards = ref<Overview['cards']>([])
 const moduleRows = ref<Overview['modules']>([])
+const scope = ref<Overview['scope']>()
 
 onMounted(async () => {
   try {
     const payload = await fetchJson<Overview>('/api/overview')
     cards.value = payload.cards
     moduleRows.value = payload.modules
+    scope.value = payload.scope
+    // 越界告警单独成卡，不并入普通告警异常量
+    if (payload.boundary_pending !== undefined) {
+      cards.value = [
+        ...cards.value,
+        { label: '待提醒越界告警', value: payload.boundary_pending },
+      ]
+    }
   } catch {
     cards.value = [{"label": "业务模块", "value": 0}, {"label": "今日新增", "value": 0}]
-    moduleRows.value = [{"name": "光伏电站", "created": 0, "pending": 0, "abnormal": 0}, {"name": "光伏方阵", "created": 0, "pending": 0, "abnormal": 0}, {"name": "逆变器管理", "created": 0, "pending": 0, "abnormal": 0}, {"name": "汇流箱管理", "created": 0, "pending": 0, "abnormal": 0}, {"name": "组串监测", "created": 0, "pending": 0, "abnormal": 0}, {"name": "辐照监测", "created": 0, "pending": 0, "abnormal": 0}, {"name": "组件清洗", "created": 0, "pending": 0, "abnormal": 0}, {"name": "巡检任务", "created": 0, "pending": 0, "abnormal": 0}, {"name": "缺陷登记", "created": 0, "pending": 0, "abnormal": 0}, {"name": "消缺处理", "created": 0, "pending": 0, "abnormal": 0}, {"name": "备件领用", "created": 0, "pending": 0, "abnormal": 0}, {"name": "发电量核算", "created": 0, "pending": 0, "abnormal": 0}, {"name": "限电记录", "created": 0, "pending": 0, "abnormal": 0}, {"name": "告警中心", "created": 0, "pending": 0, "abnormal": 0}, {"name": "作业许可", "created": 0, "pending": 0, "abnormal": 0}, {"name": "运维承包商", "created": 0, "pending": 0, "abnormal": 0}, {"name": "培训考核", "created": 0, "pending": 0, "abnormal": 0}, {"name": "电量结算", "created": 0, "pending": 0, "abnormal": 0}]
   }
 })
 </script>

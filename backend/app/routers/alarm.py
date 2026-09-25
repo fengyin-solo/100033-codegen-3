@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.security import current_role
 from app.services.alarm import AlarmService
 
 router = APIRouter(prefix="/api/alarm", tags=["告警中心"])
@@ -22,11 +23,12 @@ def list_entries(
     status: str | None = Query(default=None, description="待确认、已确认、已处置、已忽略"),
     page: int = 1,
     size: int = 20,
+    role_code: str = Depends(current_role),
 ) -> PageResult[dict]:
-    """按告警编号与状态过滤告警中心列表；没有数据时返回空页，不报错。"""
+    """按告警编号与状态过滤普通告警列表；越界告警不在此列表，且只返回授权区域内数据。"""
     if size > 200:
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
-    items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
+    items, total = service.list_entries(role_code=role_code, keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
 
 
@@ -49,17 +51,24 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
-def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条告警事件执行确认告警、处置告警、忽略告警；不允许的动作会被拦下并说明原因。"""
+def run_action(
+    entry_id: int,
+    payload: EntryPayload,
+    role_code: str = Depends(current_role),
+) -> ActionResult:
+    """对单条普通告警执行确认、处置、忽略；越权提交会被拦下并说明原因。"""
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+    try:
+        entry, message = service.run_action(role_code, entry_id, action)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
 
 
 @router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出告警中心清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
+def export_entries(role_code: str = Depends(current_role)) -> dict[str, Any]:
+    """导出普通告警清单：只导出授权区域内数据，不含越界告警。"""
+    items, total = service.list_entries(role_code=role_code, page=1, size=10000)
     return {"module": "alarm", "total": total, "items": items}

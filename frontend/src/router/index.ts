@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import Dashboard from '@/views/Dashboard.vue'
+const Safety = () => import('@/views/safety/index.vue')
 const Station = () => import('@/views/station/index.vue')
 const Array = () => import('@/views/array/index.vue')
 const Inverter = () => import('@/views/inverter/index.vue')
@@ -24,6 +25,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'dashboard', component: Dashboard },
+    { path: '/safety', name: 'safety', component: Safety },
     { path: '/station', name: 'station', component: Station },
     { path: '/array', name: 'array', component: Array },
     { path: '/inverter', name: 'inverter', component: Inverter },

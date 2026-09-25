@@ -3,10 +3,12 @@
     <header class="page-head">
       <div>
         <h2>作业许可管理</h2>
-        <p class="page-desc">维护作业许可单，围绕许可编号、作业类型、作业地点、工作负责人做登记、筛选与状态流转。</p>
+        <p class="page-desc">
+          只展示当前角色授权区域内的作业许可；同一片区域同时生效的许可只放行优先级最高的一条，其余只读。
+          当前角色：{{ session.identity?.角色名称 }} · {{ session.identity?.授权范围 }}
+        </p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" type="button" @click="openCreate">登记作业许可单</button>
         <button class="btn" type="button" @click="exportRows">导出作业许可清单</button>
       </div>
     </header>
@@ -36,50 +38,64 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">
+            <template v-if="column === '放行状态'">
+              <span v-if="row[column] === '放行'" class="tag tag-pass">放行</span>
+              <span v-else-if="row[column] === '只读'" class="tag tag-readonly" :title="String(row.只读原因 ?? '')">只读</span>
+              <span v-else>—</span>
+            </template>
+            <template v-else>{{ row[column] ?? '—' }}</template>
+          </td>
           <td class="row-actions">
-            <button
-              v-for="action in actions"
-              :key="action"
-              class="link"
-              type="button"
-              @click="runAction(action, row)"
-            >
-              {{ action }}
-            </button>
+            <template v-if="canAct && !row.只读">
+              <button
+                v-for="action in actions"
+                :key="action"
+                class="link"
+                type="button"
+                @click="runAction(action, row)"
+              >
+                {{ action }}
+              </button>
+            </template>
+            <span v-else-if="row.只读" class="inline-tip">只读：{{ row.只读原因 ?? '区域内已有更高优先级许可' }}</span>
+            <span v-else class="inline-tip">当前角色仅可查看</span>
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 1" class="empty-state">暂无作业许可数据，可先登记作业许可单</td>
+          <td :colspan="columns.length + 1" class="empty-state">授权区域内暂无作业许可数据</td>
         </tr>
       </tbody>
     </table>
 
     <footer class="page-foot">
-      <span>共 {{ total }} 条作业许可记录</span>
+      <span>共 {{ total }} 条作业许可记录（已按许可编号去重）</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { request } from '@/api/client'
+import { request, responseError } from '@/api/client'
+import { useSessionStore } from '@/stores/session'
 
-type Row = Record<string, string | number | null>
+type Row = Record<string, string | number | boolean | null>
 
 const ENDPOINT = '/api/permit'
-const columns = ["许可编号", "作业类型", "作业地点", "工作负责人", "安全措施", "许可时间", "有效期至", "许可状态"]
+const columns = ["许可编号", "作业类型", "作业地点", "工作负责人", "许可时间", "有效期至", "优先级", "放行状态", "许可状态"]
 const actions = ["提交申请", "签发许可", "驳回申请"]
-const statuses = ["待申请", "已受理", "已许可", "已驳回", "已过期"]
-const stats = [{"label": "待受理许可", "value": 0}, {"label": "有效许可", "value": 0}, {"label": "即将到期许可", "value": 0}]
+const stats = [{"label": "授权区域内许可", "value": 0}, {"label": "放行中许可", "value": 0}, {"label": "只读排队许可", "value": 0}]
+
+const session = useSessionStore()
+const canAct = computed(() => session.can('permit_action'))
 
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
-const filterFields = columns.slice(0, 3)
+const filterFields = ["许可编号", "作业地点"]
 
 function resetFilters() {
   filters.value = {}
@@ -90,19 +106,20 @@ function exportRows() {
   window.open(`${ENDPOINT}/export`, '_blank')
 }
 
-function openCreate() {
-  errorMessage.value = '作业许可单登记入口尚未接入审批流'
-}
-
 async function runAction(action: string, row: Row) {
   errorMessage.value = ''
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values: { action } }),
     })
+    const payload = (await response.json()) as { ok: boolean; message: string }
     if (!response.ok) {
-      throw new Error('作业许可动作未生效，请稍后重试')
+      // 403：越权提交，后端 detail 里写明了拒绝原因
+      throw new Error(await responseError(response, '作业许可动作未生效'))
+    }
+    if (!payload.ok) {
+      throw new Error(payload.message || '作业许可动作未生效')
     }
     await reload()
   } catch (error) {
@@ -116,11 +133,14 @@ async function reload() {
   try {
     const response = await request(`${ENDPOINT}?${query}`)
     if (!response.ok) {
-      throw new Error('作业许可单列表读取失败')
+      throw new Error(await responseError(response, '作业许可单列表读取失败'))
     }
     const payload = await response.json()
     rows.value = payload.items ?? []
     total.value = payload.total ?? rows.value.length
+    stats[0].value = total.value
+    stats[1].value = rows.value.filter((row) => row.放行状态 === '放行').length
+    stats[2].value = rows.value.filter((row) => row.放行状态 === '只读').length
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '作业许可列表读取失败'
   }

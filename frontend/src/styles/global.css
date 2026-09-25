@@ -33,3 +33,21 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .link { border: none; background: none; color: var(--brand); cursor: pointer; padding: 0; }
 .page-foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .error-text { color: #b42318; }
+.nav-item { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.nav-badge { background: #d92d20; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 9px; white-space: nowrap; }
+.role-switch { margin-left: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.role-switch select { padding: 2px 4px; border-radius: 4px; border: 1px solid var(--border); }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
+.tag-pass { background: #d1fadf; color: #027a48; }
+.tag-readonly { background: #f2f4f7; color: #475467; }
+.tag-boundary { background: #fee4e2; color: #b42318; font-weight: 600; }
+.tag-warn { background: #fef0c7; color: #b54708; }
+.tag-muted { background: #eaf2ff; color: #1f6feb; }
+.panel { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+.panel h3 { margin: 0 0 10px; font-size: 14px; }
+.panel .sub { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+.form-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.form-grid label span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.form-grid input, .form-grid select, .form-grid textarea { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; min-width: 130px; }
+.btn:disabled { color: #98a2b3; background: #f2f4f7; cursor: not-allowed; }
+.inline-tip { font-size: 12px; color: var(--muted); margin-left: 8px; }
