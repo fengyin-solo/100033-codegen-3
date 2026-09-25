@@ -1,8 +1,12 @@
-"""告警中心业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""告警中心业务规则：状态流转、字段校验与筛选口径都收在这里。
+
+越界告警不在普通告警列表里显示，统一由安全区域看板单独列出并提醒值班人。
+"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.services.zone import BOUNDARY_ALARM_TYPE, ZoneService
 from app.store import store
 
 MODULE = "alarm"
@@ -11,6 +15,8 @@ STATUS_ORDER = ["待确认", "已确认", "已处置", "已忽略"]
 ACTION_RULES = {"确认告警": "已确认", "处置告警": "已处置", "忽略告警": "已忽略"}
 NEGATIVE_ACTIONS = ["忽略告警"]
 
+zone_service = ZoneService()
+
 
 class AlarmService:
     def list_entries(
@@ -18,10 +24,14 @@ class AlarmService:
         *,
         keyword: str | None = None,
         status: str | None = None,
+        role: str | None = None,
         page: int = 1,
         size: int = 20,
     ) -> tuple[list[dict[str, Any]], int]:
-        rows = store.rows(MODULE)
+        rows = [row for row in store.rows(MODULE) if row.get("告警类型") != BOUNDARY_ALARM_TYPE]
+        if role:
+            locations = zone_service.authorized_locations(role)
+            rows = [row for row in rows if str(row.get("作业地点") or "") in locations]
         if keyword:
             rows = [row for row in rows if keyword in str(row.get("告警编号", ""))]
         if status:

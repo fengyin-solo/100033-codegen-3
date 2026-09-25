@@ -18,6 +18,8 @@
       </article>
     </div>
 
+    <p class="scope-note">当前角色：{{ store.role }} · 仅显示授权区域内的告警；越界告警不在此列表，请在安全区域看板查看</p>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -50,7 +52,7 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 1" class="empty-state">暂无告警中心数据，可先登记告警事件</td>
+          <td :colspan="columns.length + 1" class="empty-state">授权区域内暂无告警中心数据，可先登记告警事件</td>
         </tr>
       </tbody>
     </table>
@@ -63,18 +65,19 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 
 import { request } from '@/api/client'
+import { useSessionStore } from '@/stores/session'
 
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/alarm'
 const columns = ["告警编号", "告警类型", "告警等级", "触发设备", "触发时间", "确认人员", "处置说明", "告警状态"]
 const actions = ["确认告警", "处置告警", "忽略告警"]
-const statuses = ["待确认", "已确认", "已处置", "已忽略"]
 const stats = [{"label": "今日告警", "value": 0}, {"label": "待确认告警", "value": 0}, {"label": "高等级告警", "value": 0}]
 
+const store = useSessionStore()
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
@@ -99,10 +102,12 @@ async function runAction(action: string, row: Row) {
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values: { action } }),
     })
-    if (!response.ok) {
-      throw new Error('告警中心动作未生效，请稍后重试')
+    const payload = await response.json()
+    if (!payload.ok) {
+      errorMessage.value = payload.message ?? '告警中心动作未生效'
+      return
     }
     await reload()
   } catch (error) {
@@ -112,9 +117,10 @@ async function runAction(action: string, row: Row) {
 
 async function reload() {
   errorMessage.value = ''
-  const query = new URLSearchParams(filters.value as Record<string, string>).toString()
+  const query = new URLSearchParams(filters.value as Record<string, string>)
+  query.set('role', store.role)
   try {
-    const response = await request(`${ENDPOINT}?${query}`)
+    const response = await request(`${ENDPOINT}?${query.toString()}`)
     if (!response.ok) {
       throw new Error('告警事件列表读取失败')
     }
@@ -126,5 +132,6 @@ async function reload() {
   }
 }
 
+watch(() => store.role, reload)
 onMounted(reload)
 </script>

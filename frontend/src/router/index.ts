@@ -16,6 +16,7 @@ const Generation = () => import('@/views/generation/index.vue')
 const Curtail = () => import('@/views/curtail/index.vue')
 const Alarm = () => import('@/views/alarm/index.vue')
 const Permit = () => import('@/views/permit/index.vue')
+const Zone = () => import('@/views/zone/index.vue')
 const Contractor = () => import('@/views/contractor/index.vue')
 const Training = () => import('@/views/training/index.vue')
 const Settlement = () => import('@/views/settlement/index.vue')
@@ -39,6 +40,7 @@ const router = createRouter({
     { path: '/curtail', name: 'curtail', component: Curtail },
     { path: '/alarm', name: 'alarm', component: Alarm },
     { path: '/permit', name: 'permit', component: Permit },
+    { path: '/zone', name: 'zone', component: Zone },
     { path: '/contractor', name: 'contractor', component: Contractor },
     { path: '/training', name: 'training', component: Training },
     { path: '/settlement', name: 'settlement', component: Settlement },

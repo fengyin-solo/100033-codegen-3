@@ -16,17 +16,25 @@ LIST_FIELDS = ["告警编号", "告警类型", "告警等级", "触发设备", "
 STATUSES = ["待确认", "已确认", "已处置", "已忽略"]
 
 
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出告警中心清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "alarm", "total": total, "items": items}
+
+
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按告警编号检索"),
     status: str | None = Query(default=None, description="待确认、已确认、已处置、已忽略"),
+    role: str | None = Query(default=None, description="按角色过滤授权区域"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
-    """按告警编号与状态过滤告警中心列表；没有数据时返回空页，不报错。"""
+    """按告警编号与状态过滤告警中心列表；越界告警不在这里显示，没有数据时返回空页，不报错。"""
     if size > 200:
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
-    items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
+    items, total = service.list_entries(keyword=keyword, status=status, role=role, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
 
 
@@ -56,10 +64,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出告警中心清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "alarm", "total": total, "items": items}

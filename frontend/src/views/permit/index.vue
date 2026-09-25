@@ -6,7 +6,7 @@
         <p class="page-desc">维护作业许可单，围绕许可编号、作业类型、作业地点、工作负责人做登记、筛选与状态流转。</p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" type="button" @click="openCreate">登记作业许可单</button>
+        <button class="btn primary" type="button" @click="showCreate = !showCreate">登记作业许可单</button>
         <button class="btn" type="button" @click="exportRows">导出作业许可清单</button>
       </div>
     </header>
@@ -17,6 +17,20 @@
         <strong class="stat-value">{{ item.value }}</strong>
       </article>
     </div>
+
+    <p class="scope-note">当前角色：{{ store.role }} · 仅显示授权区域内的作业许可；同区域多条许可同时生效时按优先级只放行一条，其余只读</p>
+
+    <form v-if="showCreate" class="create-form" @submit.prevent="createEntry">
+      <label v-for="field in createFields" :key="field" class="filter-item">
+        <span>{{ field }}</span>
+        <select v-if="field === '优先级'" v-model="createForm[field]">
+          <option v-for="level in priorities" :key="level" :value="level">{{ level }}</option>
+        </select>
+        <input v-else v-model="createForm[field]" :placeholder="`请输入${field}`" />
+      </label>
+      <button class="btn primary" type="submit">提交登记</button>
+      <button class="btn ghost" type="button" @click="showCreate = false">取消</button>
+    </form>
 
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
@@ -35,22 +49,30 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+        <tr v-for="row in rows" :key="String(row.id)" :class="{ 'row-readonly': isReadonly(row) }">
+          <td v-for="column in columns" :key="column">
+            <span v-if="column === '放行状态' && isReadonly(row)" class="tag readonly-tag">只读</span>
+            <template v-else>{{ row[column] || '—' }}</template>
+          </td>
           <td class="row-actions">
-            <button
-              v-for="action in actions"
-              :key="action"
-              class="link"
-              type="button"
-              @click="runAction(action, row)"
-            >
-              {{ action }}
-            </button>
+            <template v-if="isReadonly(row)">
+              <span class="readonly-hint">等待放行</span>
+            </template>
+            <template v-else>
+              <button
+                v-for="action in actions"
+                :key="action"
+                class="link"
+                type="button"
+                @click="runAction(action, row)"
+              >
+                {{ action }}
+              </button>
+            </template>
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 1" class="empty-state">暂无作业许可数据，可先登记作业许可单</td>
+          <td :colspan="columns.length + 1" class="empty-state">授权区域内暂无作业许可数据，可先登记作业许可单</td>
         </tr>
       </tbody>
     </table>
@@ -63,23 +85,37 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { request } from '@/api/client'
+import { useSessionStore } from '@/stores/session'
 
-type Row = Record<string, string | number | null>
+type Row = Record<string, string | number | boolean | null>
 
 const ENDPOINT = '/api/permit'
-const columns = ["许可编号", "作业类型", "作业地点", "工作负责人", "安全措施", "许可时间", "有效期至", "许可状态"]
+const columns = ["许可编号", "作业类型", "作业地点", "区域编号", "优先级", "工作负责人", "许可时间", "有效期至", "许可状态", "放行状态"]
 const actions = ["提交申请", "签发许可", "驳回申请"]
-const statuses = ["待申请", "已受理", "已许可", "已驳回", "已过期"]
-const stats = [{"label": "待受理许可", "value": 0}, {"label": "有效许可", "value": 0}, {"label": "即将到期许可", "value": 0}]
+const priorities = ["高", "中", "低"]
+const createFields = ["许可编号", "作业类型", "作业地点", "优先级", "工作负责人"]
 
+const store = useSessionStore()
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const showCreate = ref(false)
+const createForm = reactive<Record<string, string>>({ 优先级: '中' })
+
+const stats = computed(() => [
+  { label: '授权区域许可', value: total.value },
+  { label: '放行中', value: rows.value.filter((row) => row['放行状态'] === '放行中').length },
+  { label: '只读等待', value: rows.value.filter((row) => isReadonly(row)).length },
+])
+
+function isReadonly(row: Row) {
+  return Boolean(row['只读'])
+}
 
 function resetFilters() {
   filters.value = {}
@@ -90,19 +126,39 @@ function exportRows() {
   window.open(`${ENDPOINT}/export`, '_blank')
 }
 
-function openCreate() {
-  errorMessage.value = '作业许可单登记入口尚未接入审批流'
+async function createEntry() {
+  errorMessage.value = ''
+  try {
+    const response = await request(`${ENDPOINT}?role=${encodeURIComponent(store.role)}`, {
+      method: 'POST',
+      body: JSON.stringify({ values: { ...createForm } }),
+    })
+    const payload = await response.json()
+    if (!payload.ok) {
+      errorMessage.value = payload.message ?? '作业许可单登记被拒绝'
+      return
+    }
+    showCreate.value = false
+    Object.keys(createForm).forEach((key) => {
+      if (key !== '优先级') delete createForm[key]
+    })
+    await reload()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '作业许可单登记失败'
+  }
 }
 
 async function runAction(action: string, row: Row) {
   errorMessage.value = ''
   try {
-    const response = await request(`${ENDPOINT}/${row.id}/actions`, {
+    const response = await request(`${ENDPOINT}/${row.id}/actions?role=${encodeURIComponent(store.role)}`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values: { action } }),
     })
-    if (!response.ok) {
-      throw new Error('作业许可动作未生效，请稍后重试')
+    const payload = await response.json()
+    if (!payload.ok) {
+      errorMessage.value = payload.message ?? '作业许可动作未生效'
+      return
     }
     await reload()
   } catch (error) {
@@ -112,9 +168,10 @@ async function runAction(action: string, row: Row) {
 
 async function reload() {
   errorMessage.value = ''
-  const query = new URLSearchParams(filters.value as Record<string, string>).toString()
+  const query = new URLSearchParams(filters.value as Record<string, string>)
+  query.set('role', store.role)
   try {
-    const response = await request(`${ENDPOINT}?${query}`)
+    const response = await request(`${ENDPOINT}?${query.toString()}`)
     if (!response.ok) {
       throw new Error('作业许可单列表读取失败')
     }
@@ -126,5 +183,6 @@ async function reload() {
   }
 }
 
+watch(() => store.role, reload)
 onMounted(reload)
 </script>
